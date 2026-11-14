@@ -335,7 +335,8 @@ function visible(){ const q=$("#q").value.trim().toLowerCase();
 function renderChips(){ const cats=["Todo",...new Set(products.filter(p=>p.active!==false&&p.category).map(p=>p.category))];
   if (!cats.includes(cat)) cat="Todo";
   $("#chips").replaceChildren(...(cats.length>1?cats:[]).map(c=>el("button",{class:"chip","aria-pressed":String(c===cat),text:c,onclick(){cat=c;renderChips();renderGrid();}}))); }
-function photo(p, cls){ return p.images&&p.images[0] ? el("img",{src:p.images[0],alt:p.name,loading:"lazy"}) : el("div",{class:cls||"blank",text:(p.name||"Y")[0]}); }
+function photo(p, cls){ const ph=()=>el("div",{class:cls||"blank",text:(p.name||"Y")[0]}); if (!(p.images&&p.images[0])) return ph();
+  const i=el("img",{src:p.images[0],alt:p.name,loading:"lazy"}); i.addEventListener("error",()=>i.replaceWith(ph()),{once:true}); return i; }
 function priceNode(p){ const d=el("div",{class:"price",text:money(p.price)}); if (p.old_price && Number(p.old_price)>Number(p.price)) d.append(el("s",{text:money(p.old_price)})); return d; }
 function renderGrid(){ const list=visible();
   $("#grid").replaceChildren(...(list.length? list.map(p=>el("button",{class:"card",onclick(){openProduct(p);}},
@@ -427,7 +428,7 @@ async function upload(file, max, keepPng){
   const {error}=await sb.storage.from(CFG.bucket).upload(path,blob,{contentType:type,cacheControl:"31536000"});
   if (error) throw error; return sb.storage.from(CFG.bucket).getPublicUrl(path).data.publicUrl;
 }
-function dropImages(urls){ const paths=(urls||[]).map(u=>u.split("/"+CFG.bucket+"/")[1]).filter(Boolean); if (paths.length) sb.storage.from(CFG.bucket).remove(paths).then(()=>{},()=>{}); }
+function dropImages(urls, exceptId){ const used=new Set(products.filter(x=>x.id!==exceptId).flatMap(x=>x.images||[])); const paths=(urls||[]).filter(u=>!used.has(u)).map(u=>u.split("/"+CFG.bucket+"/")[1]).filter(Boolean); if (paths.length) sb.storage.from(CFG.bucket).remove(paths).then(()=>{},()=>{}); }
 async function refresh(){ const {data}=await sb.from("ym_products").select("*").order("created_at",{ascending:false}); products=data||[]; await loadCosts(); }
 async function loadCosts(){ const {data,error}=await sb.from("ym_costs").select("product_id,cost"); if(error) return; costs={}; (data||[]).forEach(r=>costs[r.product_id]=Number(r.cost)); costsLoaded=true; }
 
@@ -444,7 +445,7 @@ function tabProducts(body){
   for (const p of shown){
     const flip=async (field)=>{ const {error}=await sb.from("ym_products").update({[field]:!p[field]}).eq("id",p.id); if(error) return toast("No se pudo guardar"); p[field]=!p[field]; renderAdmin(); };
     const del=el("button",{class:"pill",text:"Borrar",onclick:async()=>{ if (del.dataset.sure!=="1"){ del.dataset.sure="1"; del.textContent="¿Seguro? Toca otra vez"; del.classList.add("warn"); setTimeout(()=>{del.dataset.sure="";del.textContent="Borrar";del.classList.remove("warn");},3500); return; }
-      const {error}=await sb.from("ym_products").delete().eq("id",p.id); if(error) return toast("No se pudo borrar"); dropImages(p.images); await refresh(); renderAdmin(); toast("Prenda borrada"); }});
+      const {error}=await sb.from("ym_products").delete().eq("id",p.id); if(error) return toast("No se pudo borrar"); dropImages(p.images, p.id); await refresh(); renderAdmin(); toast("Prenda borrada"); }});
     const c=costs[p.id]; const g=c==null?null:Number(p.price)-c;
     list.append(el("div",{class:"row"}, p.images&&p.images[0]?el("img",{src:p.images[0],alt:""}):el("div",{class:"mini",text:(p.name||"Y")[0]}),
       el("div",{class:"meta"}, el("b",{text:p.name+" · "+money(p.price)}),
@@ -537,9 +538,11 @@ function productForm(body,p){
   const form=el("form",{class:"box",async onsubmit(e){ e.preventDefault();
     const row={name:$("#pn").value.trim(),price:Number($("#pp").value)||0,old_price:$("#po").value?Number($("#po").value):null,category:$("#pc").value.trim(),description:$("#pd").value.trim(),images:p.images,sizes:p.sizes||[],featured:!!p.featured,active:!!p.active,sold_out:!!p.sold_out};
     if (!row.name) return toast("Escribe el nombre de la prenda");
+    const sv=e.target.querySelector(".btn.fill"); if (sv.disabled) return; sv.disabled=true; sv.textContent="Guardando…";
+    const fail=m=>{ sv.disabled=false; sv.textContent="Guardar"; toast(m); };
     let id=p.id;
-    if (id){ const {error}=await sb.from("ym_products").update(row).eq("id",id); if (error) return toast("No se pudo guardar. Revisa tu conexión."); }
-    else { const {data,error}=await sb.from("ym_products").insert(row).select("id").single(); if (error) return toast("No se pudo guardar. Revisa tu conexión."); id=data.id; }
+    if (id){ const {error}=await sb.from("ym_products").update(row).eq("id",id); if (error) return fail("No se pudo guardar. Revisa tu conexión."); }
+    else { const {data,error}=await sb.from("ym_products").insert(row).select("id").single(); if (error) return fail("No se pudo guardar. Revisa tu conexión."); id=data.id; }
     const cv=$("#pk").value;
     if (cv!==""){ const {error}=await sb.from("ym_costs").upsert({product_id:id,cost:Number(cv)}); if (error) toast("La prenda se guardó, pero el costo no"); }
     else if (costs[id]!=null) await sb.from("ym_costs").delete().eq("product_id",id);
