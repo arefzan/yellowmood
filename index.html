@@ -89,6 +89,9 @@ header.top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--b
 .card h3{font-weight:400;font-size:16px;margin:0;line-height:1.3}
 .price{font-family:var(--display);font-size:19px;font-variant-numeric:tabular-nums;color:var(--brand)}
 .price s{font-family:var(--body);font-size:14px;color:var(--soft);margin-left:6px}
+.sk .ph{background:linear-gradient(100deg,var(--card) 40%,color-mix(in srgb,var(--lemon) 25%,var(--card)) 50%,var(--card) 60%) 0 0/200% 100%;animation:shine 1.3s linear infinite}
+.sk i{display:block;height:14px;border-radius:7px;background:var(--card);width:70%}.sk i+i{width:35%}
+@keyframes shine{to{background-position:-200% 0}}
 .empty{grid-column:1/-1;text-align:center;padding:48px 0;color:var(--soft)}
 .note{background:var(--lemon);border-radius:12px;padding:10px 14px;font-size:14px;margin-bottom:18px}
 
@@ -234,7 +237,6 @@ footer.foot p{margin:6px 0;color:var(--soft)}
   </div></section>
 
   <main class="catalog" id="catalogo"><div class="wrap">
-    <div class="note" id="demoNote" hidden>Vista previa con prendas de ejemplo. Al publicar la página aparecerán las que cargues en tu panel.</div>
     <div class="cathead">
       <h2 id="catalogTitle"></h2>
       <input class="search" id="q" type="search" placeholder="Buscar prenda" aria-label="Buscar prenda">
@@ -275,12 +277,6 @@ const DEFAULTS = {
   logo:"", heroImg:"", sizesOn:false, sizeList:"S, M, L, XL",
   colors:{ bg:"#F2EEE3", ink:"#33221A", brand:"#7B4B2F", lemon:"#F6CF68", leaf:"#6D8331" }
 };
-const DEMO = [
-  {id:"d1",name:"Vestido lino Amalfi",price:38,old_price:45,category:"Vestidos",description:"Lino fresco, corte suelto.",images:[],sizes:["S","M","L"],featured:true,active:true},
-  {id:"d2",name:"Blusa Limón",price:22,category:"Blusas",description:"",images:[],sizes:["S","M"],active:true},
-  {id:"d3",name:"Pantalón palazzo crema",price:30,category:"Pantalones",description:"",images:[],sizes:[],active:true},
-  {id:"d4",name:"Set Verano",price:42,category:"Conjuntos",description:"",images:[],sizes:[],active:true,sold_out:true}
-];
 
 const $ = s => document.querySelector(s);
 const el = (tag, attrs={}, ...kids) => { const n=document.createElement(tag);
@@ -291,7 +287,7 @@ const el = (tag, attrs={}, ...kids) => { const n=document.createElement(tag);
 const esc = s => String(s??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const store = { get(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v);}catch(e){return d;} }, set(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch(e){} } };
 
-let sb=null, live=false, S=structuredClone(DEFAULTS), products=[], cat="Todo", cart=store.get("ym_cart",[]), isAdmin=false;
+let sb=null, live=false, loading=true, failed=false, S=structuredClone(DEFAULTS), products=[], cat="Todo", cart=store.get("ym_cart",[]), isAdmin=false;
 try { if (!CFG.url.startsWith("__") && window.supabase) sb = window.supabase.createClient(CFG.url, CFG.key); } catch(e) {}
 
 const money = n => { n=Number(n)||0; return S.currency + (Number.isInteger(n)? n : n.toFixed(2)); };
@@ -329,16 +325,21 @@ function applySettings(){
   if (S.heroImg) art.append(el("img",{src:S.heroImg,alt:""}));
   else art.innerHTML='<div class="sun"></div><svg viewBox="0 0 200 200" aria-hidden="true"><path d="M104 40c36 2 58 34 54 70-4 32-30 56-62 56-9 0-13 8-23 6-8-2-8-10-12-17-14-22-17-44-11-64 8-30 28-52 54-51z" fill="var(--lemon)"/><path d="M106 42c-20-20-52-16-68 6 24 9 48 7 62-4 5-4 12-8 14 6" fill="none" stroke="var(--leaf)" stroke-width="5" stroke-linecap="round"/><path d="M104 42c-20-19-50-15-66 6 24 9 48 7 66-6z" fill="var(--leaf)"/></svg>';
 }
+const ckey=c=>String(c||"").trim().toLowerCase();
+const clabel=c=>{ c=String(c||"").trim(); return c.charAt(0).toUpperCase()+c.slice(1); };
 function visible(){ const q=$("#q").value.trim().toLowerCase();
-  return products.filter(p=>p.active!==false && (cat==="Todo"||p.category===cat) && (!q || (p.name+" "+p.category).toLowerCase().includes(q)))
+  return products.filter(p=>p.active!==false && (cat==="Todo"||ckey(p.category)===cat) && (!q || (p.name+" "+p.category).toLowerCase().includes(q)))
     .sort((a,b)=>(b.featured?1:0)-(a.featured?1:0)); }
-function renderChips(){ const cats=["Todo",...new Set(products.filter(p=>p.active!==false&&p.category).map(p=>p.category))];
-  if (!cats.includes(cat)) cat="Todo";
-  $("#chips").replaceChildren(...(cats.length>1?cats:[]).map(c=>el("button",{class:"chip","aria-pressed":String(c===cat),text:c,onclick(){cat=c;renderChips();renderGrid();}}))); }
+function renderChips(){ const m=new Map(); products.filter(p=>p.active!==false&&ckey(p.category)).forEach(p=>{ const k=ckey(p.category); if(!m.has(k)) m.set(k,clabel(p.category)); });
+  const cats=[["Todo","Todo"],...m]; if (cat!=="Todo" && !m.has(cat)) cat="Todo";
+  $("#chips").replaceChildren(...(cats.length>1?cats:[]).map(([k,t])=>el("button",{class:"chip","aria-pressed":String(k===cat),text:t,onclick(){cat=k;renderChips();renderGrid();}}))); }
 function photo(p, cls){ const ph=()=>el("div",{class:cls||"blank",text:(p.name||"Y")[0]}); if (!(p.images&&p.images[0])) return ph();
   const i=el("img",{src:p.images[0],alt:p.name,loading:"lazy"}); i.addEventListener("error",()=>i.replaceWith(ph()),{once:true}); return i; }
 function priceNode(p){ const d=el("div",{class:"price",text:money(p.price)}); if (p.old_price && Number(p.old_price)>Number(p.price)) d.append(el("s",{text:money(p.old_price)})); return d; }
-function renderGrid(){ const list=visible();
+function renderGrid(){
+  if (loading) return $("#grid").replaceChildren(...Array.from({length:8},()=>el("div",{class:"card sk","aria-hidden":"true"}, el("div",{class:"ph"}), el("i"), el("i"))));
+  if (failed) return $("#grid").replaceChildren(el("div",{class:"empty"}, el("p",{text:"No pudimos cargar la colección. Revisa tu conexión."}), el("button",{class:"btn",text:"Intentar de nuevo",onclick:()=>start()})));
+  const list=visible();
   $("#grid").replaceChildren(...(list.length? list.map(p=>el("button",{class:"card",onclick(){openProduct(p);}},
     el("div",{class:"ph"}, photo(p), p.sold_out?el("span",{class:"tag out",text:"Agotado"}): (p.old_price&&Number(p.old_price)>Number(p.price))?el("span",{class:"tag",text:"Oferta"}): p.featured?el("span",{class:"tag",text:"Nuevo"}):null),
     el("h3",{text:p.name}), priceNode(p)))
@@ -383,12 +384,12 @@ $("#q").addEventListener("input",renderGrid);
 
 async function loadData(){
   if (!sb) throw new Error("sin conexión");
-  const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error("tiempo")),9000));
+  const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error("tiempo")),20000));
   const [st,pr]=await Promise.race([Promise.all([sb.from("ym_settings").select("data").eq("id",1).maybeSingle(), sb.from("ym_products").select("*").order("created_at",{ascending:false})]), timeout]);
   if (st.error||pr.error) throw (st.error||pr.error);
   mergeSettings(st.data&&st.data.data); products=pr.data||[]; live=true;
 }
-function renderStore(){ applySettings(); renderChips(); renderGrid(); saveCart(); $("#demoNote").hidden=live; }
+function renderStore(){ applySettings(); renderChips(); renderGrid(); saveCart(); }
 
 /* ---------- panel ---------- */
 const A=$("#admin"); let tab="productos", editing=null, costs={}, costsLoaded=false, pFilter="todas", salesMonth=todayCCS().slice(0,7);
@@ -606,15 +607,17 @@ function tabAccount(body){
 /* ---------- arranque ---------- */
 function route(){ const admin = location.hash==="#admin"; $("#store").hidden=admin; A.hidden=!admin; document.querySelectorAll(".veil").forEach(v=>v.remove()); document.body.style.overflow=""; if (admin) renderAdmin(); }
 addEventListener("hashchange",route);
-(async function start(){
-  products=DEMO; renderStore(); route();
+start();
+async function start(){
+  loading=true; failed=false; renderStore(); route();
   try { await loadData(); } catch(e) { live=false; }
-  if (live){ renderStore(); route();
+  loading=false; failed=!live; renderStore();
+  if (live){ route();
     try { const {data:{session}}=await sb.auth.getSession(); isAdmin=!!session; } catch(e){}
     let seen=false; try{ seen=sessionStorage.getItem("ym_seen")==="1"; sessionStorage.setItem("ym_seen","1"); }catch(e){}
     if (!seen) track("view");
   }
-})();
+}
 </script>
 </body>
 </html>
