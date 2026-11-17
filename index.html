@@ -274,7 +274,7 @@ const DEFAULTS = {
   heroBtn:"Ver la colección", catalogTitle:"La colección",
   whatsapp:"584123029351", instagram:"yellowmood25", currency:"$",
   waMsg:"Hola Yellow Mood 🍋 quiero pedir:", footer:"Ropa con buen mood.",
-  logo:"", heroImg:"", sizesOn:false, sizeList:"S, M, L, XL",
+  logo:"", heroImg:"", sizesOn:false, sizeList:"S, M, L, XL", catsOn:false,
   colors:{ bg:"#F2EEE3", ink:"#33221A", brand:"#7B4B2F", lemon:"#F6CF68", leaf:"#6D8331" }
 };
 
@@ -331,6 +331,7 @@ function visible(){ const q=$("#q").value.trim().toLowerCase();
   return products.filter(p=>p.active!==false && (cat==="Todo"||ckey(p.category)===cat) && (!q || (p.name+" "+p.category).toLowerCase().includes(q)))
     .sort((a,b)=>(b.featured?1:0)-(a.featured?1:0)); }
 function renderChips(){ const m=new Map(); products.filter(p=>p.active!==false&&ckey(p.category)).forEach(p=>{ const k=ckey(p.category); if(!m.has(k)) m.set(k,clabel(p.category)); });
+  if (!S.catsOn){ cat="Todo"; $("#chips").replaceChildren(); $("#chips").hidden=true; return; } $("#chips").hidden=false;
   const cats=[["Todo","Todo"],...m]; if (cat!=="Todo" && !m.has(cat)) cat="Todo";
   $("#chips").replaceChildren(...(cats.length>1?cats:[]).map(([k,t])=>el("button",{class:"chip","aria-pressed":String(k===cat),text:t,onclick(){cat=k;renderChips();renderGrid();}}))); }
 function photo(p, cls){ const ph=()=>el("div",{class:cls||"blank",text:(p.name||"Y")[0]}); if (!(p.images&&p.images[0])) return ph();
@@ -588,15 +589,17 @@ function tabLook(body){
     const inp=el("input",{type:"file",id:"up_"+key,accept:"image/*",async onchange(){ if(!inp.files[0])return; toast("Subiendo imagen…"); try{ draft[key]=await upload(inp.files[0],max,png); prev.src=draft[key]; prev.hidden=false; toast("Imagen lista. Toca Guardar."); }catch(e){ toast("No se pudo subir la imagen"); } }});
     return el("div",{class:"f"}, el("label",{for:"up_"+key,text:label}), prev, inp, el("button",{type:"button",class:"pill",style:"align-self:flex-start",text:"Quitar imagen",onclick(){ draft[key]=""; prev.src=key==="logo"?LOGO:""; prev.hidden=key!=="logo"; }})); };
   const sz=el("input",{type:"checkbox",id:"szOn"}); sz.checked=!!draft.sizesOn;
+  const ct=el("input",{type:"checkbox",id:"ctOn"}); ct.checked=!!draft.catsOn;
   const form=el("form",{async onsubmit(e){ e.preventDefault();
     for (const [k] of T) draft[k]=$("#s_"+k).value.trim(); for (const [k] of C) draft.colors[k]=$("#c_"+k).value;
-    draft.sizesOn=sz.checked; draft.sizeList=$("#s_sizeList").value; draft.whatsapp=draft.whatsapp.replace(/\D/g,"");
+    draft.sizesOn=sz.checked; draft.catsOn=ct.checked; draft.sizeList=$("#s_sizeList").value; draft.whatsapp=draft.whatsapp.replace(/\D/g,"");
     const {error}=await sb.from("ym_settings").update({data:draft}).eq("id",1); if (error) return toast("No se pudo guardar");
     mergeSettings(draft); renderStore(); renderAdmin(); toast("Cambios guardados"); }},
     el("div",{class:"box"}, el("h2",{text:"Textos y contacto"}), T.map(([k,l,t])=>field("s_"+k,l,draft[k],t))),
     el("div",{class:"box"}, el("h2",{text:"Imágenes"}), imgField("logo","Logo (PNG sin fondo se ve mejor)",600,true), imgField("heroImg","Foto de portada (opcional, reemplaza el limón)",1400,false)),
     el("div",{class:"box"}, el("h2",{text:"Colores"}), el("div",{class:"colors"}, C.map(([k,l])=>{ const i=el("input",{type:"color",id:"c_"+k}); i.value=draft.colors[k]; return el("label",{for:"c_"+k}, l, i); })),
       el("button",{type:"button",class:"pill",style:"margin-top:14px",text:"Volver a los colores del logo",onclick(){ for (const [k] of C) $("#c_"+k).value=DEFAULTS.colors[k]; }})),
+    el("div",{class:"box"}, el("h2",{text:"Categorías en la tienda"}), el("label",{class:"sw",for:"ctOn"}, ct, "Mostrar los botones Todo, Top, Vestido…"), el("p",{class:"help",style:"margin:0",text:"Apagado, el cliente ve todas las prendas juntas. Las categorías de cada prenda se guardan igual, así que puedes volver a encenderlo cuando quieras."})),
     el("div",{class:"box"}, el("h2",{text:"Tallas"}), el("label",{class:"sw",for:"szOn"}, sz, "Activar tallas en la tienda"), field("s_sizeList","Tallas que manejas, separadas por coma",draft.sizeList), el("p",{class:"help",style:"margin:0",text:"Con las tallas activas, cada prenda te deja marcar cuáles tiene y el cliente elige una antes de pedir."})),
     el("button",{class:"btn fill block",text:"Guardar cambios"}));
   body.append(form);
